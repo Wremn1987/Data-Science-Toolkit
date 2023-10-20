@@ -1,137 +1,133 @@
-# src/data_cleaner.py
-
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.impute import SimpleImputer
+import logging
 
-def handle_missing_values(df, strategy='mean', columns=None):
+logging.basicConfig(level=logging.INFO, format=\'%(asctime)s - %(levelname)s - %(message)s\')
+logger = logging.getLogger(__name__)
+
+class DataCleaner:
     """
-    Handles missing values in a DataFrame.
-
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        strategy (str): Imputation strategy ('mean', 'median', 'most_frequent', 'constant').
-        columns (list, optional): List of columns to apply imputation. If None, applies to all numeric columns for 'mean'/'median', or all categorical for 'most_frequent'.
-
-    Returns:
-        pd.DataFrame: DataFrame with missing values handled.
+    A utility class for performing common data cleaning operations on Pandas DataFrames.
+    Includes methods for handling missing values, removing duplicates, and type conversion.
     """
-    df_copy = df.copy()
-    if columns is None:
-        if strategy in ['mean', 'median']:
-            columns = df_copy.select_dtypes(include=np.number).columns
-        elif strategy == 'most_frequent':
-            columns = df_copy.select_dtypes(include='object').columns
-        else:
-            columns = df_copy.columns # For 'constant' strategy
+    def __init__(self, dataframe):
+        if not isinstance(dataframe, pd.DataFrame):
+            raise TypeError("Input must be a Pandas DataFrame.")
+        self.df = dataframe.copy()
+        logger.info("DataCleaner initialized with a DataFrame.")
 
-    for col in columns:
-        if df_copy[col].isnull().any():
-            if strategy == 'constant':
-                fill_value = 0 if df_copy[col].dtype in [np.number] else 'missing'
-                imputer = SimpleImputer(strategy=strategy, fill_value=fill_value)
+    def handle_missing_values(self, strategy=\'mean\', columns=None, fill_value=None):
+        """
+        Handles missing values (NaN) in the DataFrame.
+        
+        Args:
+            strategy (str): How to fill missing values. Options: \'mean\', \'median\', \'mode\', \'ffill\', \'bfill\', \'drop\', \'constant\'.
+            columns (list): List of columns to apply the strategy. If None, applies to all suitable columns.
+            fill_value: Value to use if strategy is \'constant\'.
+        """
+        target_columns = columns if columns is not None else self.df.columns
+        logger.info(f"Handling missing values with strategy: {strategy} for columns: {target_columns}")
+
+        for col in target_columns:
+            if self.df[col].isnull().any():
+                if strategy == \'mean\':
+                    if pd.api.types.is_numeric_dtype(self.df[col]):
+                        self.df[col].fillna(self.df[col].mean(), inplace=True)
+                    else:
+                        logger.warning(f"Cannot apply \'mean\' strategy to non-numeric column: {col}")
+                elif strategy == \'median\':
+                    if pd.api.types.is_numeric_dtype(self.df[col]):
+                        self.df[col].fillna(self.df[col].median(), inplace=True)
+                    else:
+                        logger.warning(f"Cannot apply \'median\' strategy to non-numeric column: {col}")
+                elif strategy == \'mode\':
+                    self.df[col].fillna(self.df[col].mode()[0], inplace=True)
+                elif strategy == \'ffill\':
+                    self.df[col].fillna(method=\'ffill\', inplace=True)
+                elif strategy == \'bfill\':
+                    self.df[col].fillna(method=\'bfill\', inplace=True)
+                elif strategy == \'drop\':
+                    self.df.dropna(subset=[col], inplace=True)
+                elif strategy == \'constant\':
+                    if fill_value is not None:
+                        self.df[col].fillna(fill_value, inplace=True)
+                    else:
+                        logger.warning(f"\'constant\' strategy requires a fill_value for column: {col}")
+                else:
+                    logger.warning(f"Unknown strategy: {strategy} for column: {col}")
             else:
-                imputer = SimpleImputer(strategy=strategy)
-            df_copy[col] = imputer.fit_transform(df_copy[[col]])
-    return df_copy
+                logger.info(f"No missing values in column: {col}")
+        return self.df
 
-def remove_outliers_iqr(df, column, k=1.5):
-    """
-    Removes outliers from a specified column using the IQR method.
+    def remove_duplicates(self, subset=None, keep=\'first\'):
+        """
+        Removes duplicate rows from the DataFrame.
+        
+        Args:
+            subset (list): List of column names to consider for identifying duplicates.
+            keep (str): Which duplicates to mark as False. Options: \'first\', \'last\', False.
+        """
+        initial_rows = len(self.df)
+        self.df.drop_duplicates(subset=subset, keep=keep, inplace=True)
+        removed_rows = initial_rows - len(self.df)
+        logger.info(f"Removed {removed_rows} duplicate rows.")
+        return self.df
 
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        column (str): The column name to process.
-        k (float): Multiplier for the IQR to define outlier bounds.
+    def convert_column_type(self, column, new_type):
+        """
+        Converts a specified column to a new data type.
+        
+        Args:
+            column (str): The name of the column to convert.
+            new_type (type): The target data type (e.g., int, float, str, datetime).
+        """
+        if column not in self.df.columns:
+            logger.error(f"Column \'{column}\' not found in DataFrame.")
+            return self.df
+        
+        try:
+            if new_type == \'datetime\':
+                self.df[column] = pd.to_datetime(self.df[column])
+            else:
+                self.df[column] = self.df[column].astype(new_type)
+            logger.info(f"Column \'{column}\' converted to type {new_type.__name__}.")
+        except Exception as e:
+            logger.error(f"Failed to convert column \'{column}\' to {new_type.__name__}: {e}")
+        return self.df
 
-    Returns:
-        pd.DataFrame: DataFrame with outliers removed.
-    """
-    Q1 = df[column].quantile(0.25)
-    Q3 = df[column].quantile(0.75)
-    IQR = Q3 - Q1
-    lower_bound = Q1 - k * IQR
-    upper_bound = Q3 + k * IQR
-    return df[(df[column] >= lower_bound) & (df[column] <= upper_bound)]
+    def get_dataframe(self):
+        """
+        Returns the cleaned DataFrame.
+        """
+        return self.df
 
-def scale_features(df, columns, scaler_type='standard'):
-    """
-    Scales numerical features using StandardScaler or MinMaxScaler.
-
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of numerical columns to scale.
-        scaler_type (str): Type of scaler ('standard' or 'minmax').
-
-    Returns:
-        pd.DataFrame: DataFrame with scaled features.
-    """
-    df_copy = df.copy()
-    if scaler_type == 'standard':
-        scaler = StandardScaler()
-    # elif scaler_type == 'minmax':
-    #     scaler = MinMaxScaler()
-    else:
-        raise ValueError("scaler_type must be 'standard' or 'minmax'")
-    df_copy[columns] = scaler.fit_transform(df_copy[columns])
-    return df_copy
-
-def encode_categorical_features(df, columns, encoder_type='onehot'):
-    """
-    Encodes categorical features using OneHotEncoder.
-
-    Args:
-        df (pd.DataFrame): The input DataFrame.
-        columns (list): List of categorical columns to encode.
-        encoder_type (str): Type of encoder ('onehot').
-
-    Returns:
-        pd.DataFrame: DataFrame with encoded features.
-    """
-    df_copy = df.copy()
-    if encoder_type == 'onehot':
-        encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
-        encoded_features = encoder.fit_transform(df_copy[columns])
-        encoded_df = pd.DataFrame(encoded_features, columns=encoder.get_feature_names_out(columns))
-        df_copy = pd.concat([df_copy.drop(columns=columns), encoded_df], axis=1)
-    else:
-        raise ValueError("encoder_type must be 'onehot'")
-    return df_copy
-
-if __name__ == '__main__':
-    # Sample DataFrame
+if __name__ == "__main__":
+    logger.info("Running example for DataCleaner...")
+    
+    # Create a sample DataFrame with missing values and duplicates
     data = {
-        'A': [1, 2, np.nan, 4, 5],
-        'B': [10, 20, 30, 100, 50],
-        'C': ['X', 'Y', 'X', 'Z', np.nan],
-        'D': [1.1, 2.2, 3.3, 4.4, 5.5]
+        \'A\': [1, 2, np.nan, 4, 2, 5],
+        \'B\': [\'foo\', \'bar\', \'foo\', \'baz\', \'bar\', np.nan],
+        \'C\': [10.1, 20.2, 10.1, 40.4, 20.2, 50.5],
+        \'D\': [\'2023-01-01\', \'2023-01-02\', \'2023-01-01\', \'2023-01-04\', \'2023-01-02\', \'2023-01-05\']
     }
-    df = pd.DataFrame(data)
-    print("Original DataFrame:
-", df)
+    sample_df = pd.DataFrame(data)
+    logger.info("Original DataFrame:\n" + str(sample_df))
 
+    cleaner = DataCleaner(sample_df)
+    
     # Handle missing values
-    df_cleaned = handle_missing_values(df, strategy='mean', columns=['A'])
-    df_cleaned = handle_missing_values(df_cleaned, strategy='most_frequent', columns=['C'])
-    print("
-DataFrame after handling missing values:
-", df_cleaned)
+    cleaner.handle_missing_values(strategy=\'mean\', columns=[\'A\'])
+    cleaner.handle_missing_values(strategy=\'mode\', columns=[\'B\'])
+    cleaner.handle_missing_values(strategy=\'constant\', columns=[\'C\'], fill_value=0.0)
+    logger.info("\nDataFrame after handling missing values:\n" + str(cleaner.get_dataframe()))
 
-    # Remove outliers
-    df_no_outliers = remove_outliers_iqr(df_cleaned, 'B', k=1.5)
-    print("
-DataFrame after removing outliers from B:
-", df_no_outliers)
+    # Remove duplicates
+    cleaner.remove_duplicates(subset=[\'A\', \'B\'], keep=\'first\')
+    logger.info("\nDataFrame after removing duplicates:\n" + str(cleaner.get_dataframe()))
 
-    # Scale features
-    df_scaled = scale_features(df_no_outliers, columns=['A', 'B'], scaler_type='standard')
-    print("
-DataFrame after scaling features A and B:
-", df_scaled)
-
-    # Encode categorical features
-    df_encoded = encode_categorical_features(df_scaled, columns=['C'], encoder_type='onehot')
-    print("
-DataFrame after one-hot encoding C:
-", df_encoded)
+    # Convert column type
+    cleaner.convert_column_type(\'A\', int)
+    cleaner.convert_column_type(\'D\', \'datetime\')
+    logger.info("\nDataFrame after type conversion:\n" + str(cleaner.get_dataframe()))
+    logger.info("DataCleaner example completed.")
