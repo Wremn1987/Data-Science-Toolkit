@@ -31,7 +31,10 @@ def get_descriptive_stats(df, include_categorical=False):
         print(df.describe(include='object'))
 
 def plot_numerical_distributions(df, columns=None, bins=30):
-    """Plots histograms and box plots for numerical columns."""
+    """
+    Plots histograms and box plots for numerical columns.
+    Requires matplotlib and seaborn to be installed.
+    """
     if columns is None:
         columns = df.select_dtypes(include=np.number).columns
     
@@ -50,7 +53,10 @@ def plot_numerical_distributions(df, columns=None, bins=30):
         plt.show()
 
 def plot_categorical_distributions(df, columns=None):
-    """Plots count plots for categorical columns."""
+    """
+    Plots count plots for categorical columns.
+    Requires matplotlib and seaborn to be installed.
+    """
     if columns is None:
         columns = df.select_dtypes(include='object').columns
     
@@ -63,7 +69,10 @@ def plot_categorical_distributions(df, columns=None):
         plt.show()
 
 def plot_correlation_heatmap(df, numerical_columns=None):
-    """Plots a correlation heatmap for numerical columns."""
+    """
+    Plots a correlation heatmap for numerical columns.
+    Requires matplotlib and seaborn to be installed.
+    """
     if numerical_columns is None:
         numerical_columns = df.select_dtypes(include=np.number).columns
     
@@ -89,6 +98,7 @@ if __name__ == '__main__':
 
     get_dataframe_info(df)
     get_descriptive_stats(df, include_categorical=True)
-    plot_numerical_distributions(df, columns=['Numerical_1', 'Numerical_2'])
-    plot_categorical_distributions(df, columns=['Categorical_1', 'Categorical_2'])
-    plot_correlation_heatmap(df, numerical_columns=['Numerical_1', 'Numerical_2'])
+    # plot_numerical_distributions(df, columns=['Numerical_1', 'Numerical_2']) # Commented out for non-interactive environment
+    # plot_categorical_distributions(df, columns=['Categorical_1', 'Categorical_2']) # Commented out for non-interactive environment
+    # plot_correlation_heatmap(df, numerical_columns=['Numerical_1', 'Numerical_2']) # Commented out for non-interactive environment
+    print("Plots are commented out for non-interactive environment. Uncomment to view locally.")
